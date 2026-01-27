@@ -16,22 +16,27 @@ const getFirebaseConfig = () => {
   try {
     return (typeof __firebase_config !== 'undefined' && __firebase_config) 
       ? JSON.parse(__firebase_config) 
-      : null;
-  } catch (e) {
-    return null;
-  }
+      : {
+          apiKey: "AIzaSyDOeC0me_E0rtDx56ljnihrY8U5JxkCleg",
+          authDomain: "los-aromos-4b29b.firebaseapp.com",
+          projectId: "los-aromos-4b29b",
+          storageBucket: "los-aromos-4b29b.firebasestorage.app",
+          messagingSenderId: "969960941827",
+          appId: "1:969960941827:web:d2b1863bcd2ee02c026136"
+        };
+  } catch (e) { return null; }
 };
 
 const firebaseConfig = getFirebaseConfig();
-const app = firebaseConfig ? initializeApp(firebaseConfig) : null;
-const auth = app ? getAuth(app) : null;
-const db = app ? getFirestore(app) : null;
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-// REGLA 1: Saneamiento del appId para evitar errores de segmentos pares en Firestore
+// REGLA 1: Saneamiento estricto del appId (Evita errores de segmentos pares/impares)
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'los-aromos-admin-total';
-const appId = rawAppId.split('/').join('_'); // Reemplaza barras por guiones bajos
+const appId = rawAppId.replace(/[^a-zA-Z0-9]/g, '_'); 
 
-// --- UTILIDAD PARA GENERAR PDF ---
+// --- UTILIDAD PDF ---
 const loadJsPDF = () => {
   return new Promise((resolve) => {
     if (window.jspdf) return resolve(window.jspdf);
@@ -44,6 +49,7 @@ const loadJsPDF = () => {
 
 const App = () => {
   const [user, setUser] = useState(null);
+  const [authError, setAuthError] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [bungalows, setBungalows] = useState([]);
   const [reservations, setReservations] = useState([]);
@@ -66,9 +72,8 @@ const App = () => {
     paymentMethod: 'Efectivo'
   });
 
-  // 1. Autenticación inicial (Prioridad Regla 3)
+  // 1. Autenticación con manejo de errores para evitar carga infinita
   useEffect(() => {
-    if (!auth) return;
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -76,18 +81,25 @@ const App = () => {
         } else {
           await signInAnonymously(auth);
         }
-      } catch (err) { console.error("Error de Auth:", err); }
+      } catch (err) { 
+        console.error("Error de Auth:", err);
+        setAuthError(err.message);
+      }
     };
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+        setAuthError(null);
+      }
+    });
     return () => unsubscribe();
   }, []);
 
-  // 2. Sincronización con Firestore (Regla 1 y 2)
+  // 2. Sincronización Firestore
   useEffect(() => {
-    if (!user || !db) return;
+    if (!user) return;
     
-    // Ruta: artifacts / {appId} / public / data / {col} (Exactamente 5 segmentos)
     const bRef = collection(db, 'artifacts', appId, 'public', 'data', 'bungalows');
     const unsubB = onSnapshot(bRef, (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -97,17 +109,17 @@ const App = () => {
         }
       }
       setBungalows(data.sort((a, b) => parseInt(a.id) - parseInt(b.id)));
-    }, (err) => console.error("Error Bungalows:", err));
+    }, (err) => setAuthError("Error Firestore Bungalows: " + err.message));
 
     const rRef = collection(db, 'artifacts', appId, 'public', 'data', 'reservations');
     const unsubR = onSnapshot(rRef, (snap) => {
       setReservations(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error("Error Reservas:", err));
+    }, (err) => setAuthError("Error Firestore Reservas: " + err.message));
 
     const mRef = collection(db, 'artifacts', appId, 'public', 'data', 'maintenance');
     const unsubM = onSnapshot(mRef, (snap) => {
       setMaintenance(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error("Error Mantenimiento:", err));
+    }, (err) => setAuthError("Error Firestore Mantenimiento: " + err.message));
 
     return () => { unsubB(); unsubR(); unsubM(); };
   }, [user]);
@@ -134,7 +146,7 @@ const App = () => {
 
   const handleAddBooking = async (e) => {
     e.preventDefault();
-    if (!user || !db) return;
+    if (!user) return;
     setIsProcessing(true);
     try {
       const rRef = collection(db, 'artifacts', appId, 'public', 'data', 'reservations');
@@ -151,9 +163,13 @@ const App = () => {
   };
 
   const updateStatus = async (id, newStatus) => {
-    if (!db) return;
+    if (!user) return;
     const bDoc = doc(db, 'artifacts', appId, 'public', 'data', 'bungalows', id.toString());
     await updateDoc(bDoc, { status: newStatus });
+  };
+
+  const deleteMaintenance = async (id) => {
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', id));
   };
 
   const sendWhatsApp = (res) => {
@@ -198,7 +214,25 @@ const App = () => {
     setShowDetailModal(true);
   };
 
-  if (!user) return <div className="h-screen flex items-center justify-center font-black animate-pulse bg-slate-900 text-white uppercase tracking-widest">Iniciando Los Aromos...</div>;
+  // Renderizado de Pantalla de Carga o Error
+  if (authError || !user) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 text-center font-sans">
+      {!authError ? (
+        <>
+          <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+          <h2 className="text-xl font-black uppercase tracking-widest">Iniciando Los Aromos...</h2>
+          <p className="text-slate-400 mt-2 text-sm">Sincronizando con base de datos real</p>
+        </>
+      ) : (
+        <div className="max-w-md bg-red-500/10 border border-red-500 p-8 rounded-[2.5rem] shadow-2xl">
+          <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-black mb-2 uppercase">Error de Conexión</h2>
+          <p className="text-slate-300 text-sm mb-6 leading-relaxed">{authError}</p>
+          <button onClick={() => window.location.reload()} className="px-8 py-3 bg-red-500 hover:bg-red-600 rounded-2xl font-black transition-all">REINTENTAR CONEXIÓN</button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] text-slate-900 font-sans">
@@ -207,7 +241,7 @@ const App = () => {
       <aside className="w-72 bg-[#0F172A] text-white hidden lg:flex flex-col shadow-2xl z-30">
         <div className="p-8 border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20 text-white">
               <Home size={24} />
             </div>
             <div>
@@ -265,21 +299,52 @@ const App = () => {
             </div>
           )}
 
+          {activeTab === 'maintenance' && (
+            <div className="max-w-4xl bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm animate-in slide-in-from-bottom-4">
+              <h3 className="text-xl font-black mb-6 uppercase">Tareas de Mantenimiento</h3>
+              <div className="space-y-4">
+                {maintenance.length > 0 ? maintenance.filter(m => m.status === 'pending').map(m => (
+                  <div key={m.id} className="p-5 bg-slate-50 rounded-2xl border flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <span className="w-10 h-10 bg-slate-200 rounded-xl flex items-center justify-center font-black">#{m.bungalowId}</span>
+                      <p className="font-bold text-slate-700">{m.task}</p>
+                    </div>
+                    <button onClick={() => deleteMaintenance(m.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18}/></button>
+                  </div>
+                )) : <div className="py-10 text-center text-slate-300 font-bold uppercase">No hay tareas pendientes</div>}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'reports' && (
             <div className="max-w-5xl space-y-8 animate-in fade-in duration-500">
                <div className="bg-[#0F172A] p-10 rounded-[3rem] text-white flex justify-between items-center shadow-2xl">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-2">Ingresos por Señas</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-2">Total Recaudado por Señas</p>
                     <h3 className="text-6xl font-black tracking-tighter">${stats.totalIncome}</h3>
                   </div>
                   <BarChart3 size={64} className="text-slate-800" />
+               </div>
+               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100">
+                  <h3 className="text-xl font-black mb-6 uppercase">Historial de Cobros</h3>
+                  <div className="space-y-3">
+                    {reservations.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).map(r => (
+                      <div key={r.id} className="flex justify-between items-center p-5 bg-slate-50 rounded-2xl border">
+                        <div>
+                          <p className="font-black text-slate-800">{String(r.name)}</p>
+                          <p className="text-xs text-slate-400">Bungalow {r.bungalowId} • {r.paymentMethod}</p>
+                        </div>
+                        <p className="text-lg font-black text-emerald-600">+ ${r.deposit}</p>
+                      </div>
+                    ))}
+                  </div>
                </div>
             </div>
           )}
         </div>
       </main>
 
-      {/* MODAL DE DETALLE DE BUNGALOW */}
+      {/* MODAL DE DETALLE DE BUNGALOW (Visualización de Reservas y Disponibilidad) */}
       {showDetailModal && selectedBungalow && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[110] flex items-center justify-center p-4">
           <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-5xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[85vh]">
@@ -287,13 +352,13 @@ const App = () => {
              <div className="md:w-1/2 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800 overflow-y-auto">
                 <div className="flex justify-between items-center mb-8">
                   <h3 className="text-2xl font-black tracking-tight uppercase">Disponibilidad: {String(selectedBungalow.name)}</h3>
-                  <div className="flex gap-2 text-slate-900">
-                    <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-100 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all"><ChevronLeft size={20}/></button>
-                    <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-100 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all rotate-180"><ChevronLeft size={20}/></button>
+                  <div className="flex gap-2">
+                    <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-100 text-slate-900 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all"><ChevronLeft size={20}/></button>
+                    <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-100 text-slate-900 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all rotate-180"><ChevronLeft size={20}/></button>
                   </div>
                 </div>
                 <div className="grid grid-cols-7 mb-4 text-center">
-                  {['D','L','M','M','J','V','S'].map(d => <div key={d} className="text-[10px] font-black text-slate-500">{d}</div>)}
+                  {['D','L','M','M','J','V','S'].map(d => <div key={d} className="text-[10px] font-black text-slate-500 uppercase">{d}</div>)}
                 </div>
                 <div className="grid grid-cols-7 gap-2">
                   {(() => {
@@ -303,7 +368,7 @@ const App = () => {
                     for (let d = 1; d <= days; d++) {
                       const occupied = isDateOccupied(d, month, year, selectedBungalow.id);
                       cells.push(
-                        <div key={d} className={`aspect-square flex items-center justify-center rounded-2xl text-xs font-bold ${occupied ? 'bg-red-500 text-white shadow-lg' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'}`}>
+                        <div key={d} className={`aspect-square flex items-center justify-center rounded-2xl text-xs font-bold transition-all ${occupied ? 'bg-red-500 text-white shadow-lg' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/20'}`}>
                           {d}
                         </div>
                       );
@@ -318,7 +383,7 @@ const App = () => {
              </div>
              {/* Listado de Reservas Hechas */}
              <div className="md:w-1/2 p-12 bg-white relative overflow-y-auto text-slate-900">
-                <button onClick={() => setShowDetailModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200"><X/></button>
+                <button onClick={() => setShowDetailModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200 transition-all"><X/></button>
                 <h3 className="text-3xl font-black mb-8 tracking-tighter uppercase text-slate-800">Historial de Reservas</h3>
                 <div className="space-y-4">
                   {reservations.filter(r => r.bungalowId === selectedBungalow.id).length > 0 ? (
@@ -335,7 +400,7 @@ const App = () => {
                       </div>
                     ))
                   ) : (
-                    <div className="py-20 text-center text-slate-300 font-bold uppercase">No hay registros aún</div>
+                    <div className="py-20 text-center text-slate-300 font-bold uppercase">Sin historial en esta unidad</div>
                   )}
                 </div>
              </div>
@@ -343,20 +408,20 @@ const App = () => {
         </div>
       )}
 
-      {/* MODAL DE NUEVA RESERVA */}
+      {/* MODAL DE NUEVA RESERVA CON PAGOS */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-6xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh]">
             <div className="md:w-5/12 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800 overflow-y-auto">
               <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black tracking-tight uppercase">Ocupación Global</h3>
-                <div className="flex gap-2 text-slate-900">
-                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-100 rounded-2xl hover:bg-emerald-500"><ChevronLeft size={20}/></button>
-                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-100 rounded-2xl hover:bg-emerald-500 rotate-180"><ChevronLeft size={20}/></button>
+                <div className="flex gap-2">
+                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-600 transition-all text-white"><ChevronLeft size={20}/></button>
+                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-600 transition-all rotate-180 text-white"><ChevronLeft size={20}/></button>
                 </div>
               </div>
               <div className="grid grid-cols-7 mb-4 text-center">
-                {['D','L','M','M','J','V','S'].map(d => <div key={d} className="text-[10px] font-black text-slate-500">{d}</div>)}
+                {['D','L','M','M','J','V','S'].map(d => <div key={d} className="text-[10px] font-black text-slate-500 uppercase">{d}</div>)}
               </div>
               <div className="grid grid-cols-7 gap-2">
                 {(() => {
@@ -366,7 +431,7 @@ const App = () => {
                   for (let d = 1; d <= days; d++) {
                     const occupied = isDateOccupied(d, month, year, newBooking.bungalowId);
                     cells.push(
-                      <div key={d} className={`aspect-square flex items-center justify-center rounded-2xl text-xs font-bold ${occupied ? 'bg-red-500/20 text-red-400 border border-red-500/30 line-through' : 'bg-slate-800/40 text-slate-400'}`}>
+                      <div key={d} className={`aspect-square flex items-center justify-center rounded-2xl text-xs font-bold transition-all ${occupied ? 'bg-red-500/20 text-red-400 border border-red-500/30 line-through' : 'bg-slate-800/40 text-slate-400'}`}>
                         {d}
                       </div>
                     );
@@ -377,11 +442,11 @@ const App = () => {
             </div>
 
             <div className="md:w-7/12 p-12 bg-white relative overflow-y-auto text-slate-900">
-              <button onClick={() => setShowAddModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200 transition-colors"><X/></button>
+              <button onClick={() => setShowAddModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200 transition-all"><X/></button>
               <h3 className="text-4xl font-black mb-10 tracking-tighter uppercase text-slate-800">Nueva Reserva</h3>
               <form onSubmit={handleAddBooking} className="space-y-6">
                 <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Unidad</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seleccionar Unidad</label>
                   <div className="grid grid-cols-6 gap-2">
                     {bungalows.map(b => (
                       <button type="button" key={b.id} onClick={() => setNewBooking({...newBooking, bungalowId: b.id})} className={`h-12 rounded-xl text-xs font-black border-2 transition-all ${newBooking.bungalowId === b.id ? 'bg-[#0F172A] border-[#0F172A] text-white shadow-xl' : 'bg-slate-50 border-slate-50 text-slate-400'}`}>
@@ -402,16 +467,17 @@ const App = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Entrada</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 font-bold">Fecha Entrada</label>
                     <input type="date" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold" value={newBooking.checkin} onChange={(e) => setNewBooking({...newBooking, checkin: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Salida</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 font-bold">Fecha Salida</label>
                     <input type="date" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold" value={newBooking.checkout} onChange={(e) => setNewBooking({...newBooking, checkout: e.target.value})} />
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                {/* Nuevas Casillas: Seña y Forma de Pago */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-8 rounded-[3rem] border border-slate-100 shadow-inner">
                     <div className="flex flex-col gap-5 justify-center">
                         <label className="flex items-center gap-3 cursor-pointer group">
                            <div className="relative">
@@ -453,6 +519,7 @@ const App = () => {
                     </div>
                 </div>
 
+                {/* Recordatorio MercadoPago */}
                 {newBooking.paymentMethod === 'MercadoPago' && (
                   <div className="flex items-center gap-4 p-6 bg-amber-50 border border-amber-200 rounded-[2.5rem] animate-pulse">
                     <div className="w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center text-white shadow-lg">
@@ -465,7 +532,7 @@ const App = () => {
                 )}
 
                 <button type="submit" disabled={isProcessing} className="w-full py-6 bg-[#0F172A] text-white rounded-[2.5rem] font-black text-xl hover:bg-emerald-600 transition-all shadow-2xl active:scale-95">
-                  {isProcessing ? 'Guardando...' : 'Confirmar Registro'}
+                  {isProcessing ? 'Procesando...' : 'Confirmar Registro de Reserva'}
                 </button>
               </form>
             </div>
@@ -510,19 +577,19 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF, on
         onClick={onClick}
         className="bg-white rounded-[3.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 overflow-hidden group flex flex-col cursor-pointer active:scale-[0.98]"
     >
-      <div className="p-8 flex-1">
-        <div className="flex justify-between items-start mb-8 text-slate-900">
+      <div className="p-8 flex-1 text-slate-900">
+        <div className="flex justify-between items-start mb-8">
           <div className={`px-4 py-1.5 rounded-full ${config.bg} ${config.text} text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm`}>
             <span className={`w-2 h-2 rounded-full ${config.dot} ${data.status === 'occupied' ? 'animate-pulse' : ''}`}></span>
             {config.label}
           </div>
           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-            <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'cleaning'); }} className="p-2 hover:bg-amber-50 text-amber-600 rounded-xl shadow-sm bg-white"><Clock size={16}/></button>
-            <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'free'); }} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-xl shadow-sm bg-white"><CheckCircle2 size={16}/></button>
+            <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'cleaning'); }} className="p-2 hover:bg-amber-50 text-amber-600 rounded-xl shadow-sm bg-white" title="Limpieza"><Clock size={16}/></button>
+            <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'free'); }} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-xl shadow-sm bg-white" title="Liberar"><CheckCircle2 size={16}/></button>
           </div>
         </div>
 
-        <h3 className="text-3xl font-black text-slate-800 tracking-tighter mb-1 uppercase">{String(data.name || data.id)}</h3>
+        <h3 className="text-3xl font-black text-slate-800 tracking-tighter mb-1 uppercase leading-none">{String(data.name || data.id)}</h3>
         
         {data.status === 'occupied' && reservation ? (
           <div className="space-y-4 mt-6 animate-in text-slate-900">
@@ -535,14 +602,14 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF, on
               <button onClick={(e) => { e.stopPropagation(); onWhatsApp(reservation); }} className="flex items-center justify-center gap-2 py-3 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-emerald-100 active:scale-95">
                 <Send size={14} /> WhatsApp
               </button>
-              <button onClick={(e) => { e.stopPropagation(); onPDF(reservation); }} className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-600 rounded-2xl text-[10px] font-black uppercase active:scale-95">
+              <button onClick={(e) => { e.stopPropagation(); onPDF(reservation); }} className="flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-600 rounded-2xl text-[10px] font-black uppercase active:scale-95 shadow-sm">
                 <Download size={14} /> PDF
               </button>
             </div>
 
             <div className="flex justify-between items-end pt-4 border-t border-slate-50 text-slate-900">
-              <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Salida</p><p className="text-sm font-black text-red-500">{String(reservation.checkout)}</p></div>
-              <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Seña</p><p className="text-sm font-black text-emerald-600">${String(reservation.deposit)}</p></div>
+              <div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-bold">Salida</p><p className="text-sm font-black text-red-500">{String(reservation.checkout)}</p></div>
+              <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-bold">Seña</p><p className="text-sm font-black text-emerald-600">${String(reservation.deposit)}</p></div>
             </div>
           </div>
         ) : (
