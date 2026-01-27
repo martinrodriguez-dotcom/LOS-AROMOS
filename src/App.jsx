@@ -1,35 +1,70 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { 
-  getFirestore, collection, doc, onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, query 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged, 
+  signInWithCustomToken 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query 
 } from 'firebase/firestore';
 import { 
-  LayoutDashboard, CalendarDays, Users, Home, Search, 
-  CheckCircle2, Clock, Plus, DollarSign, Send, ChevronLeft, X,
-  Wrench, BarChart3, Package, Trash2, FileText, ChevronRight, Download
+  LayoutDashboard, 
+  CalendarDays, 
+  Users, 
+  Home, 
+  Search, 
+  CheckCircle2, 
+  Clock, 
+  Plus, 
+  DollarSign, 
+  Send, 
+  ChevronLeft, 
+  X,
+  Wrench, 
+  BarChart3, 
+  Package, 
+  Trash2, 
+  FileText, 
+  ChevronRight, 
+  Download 
 } from 'lucide-react';
 
-// --- CONFIGURACIÓN DE TU FIREBASE REAL ---
-const firebaseConfig = {
-  apiKey: "AIzaSyDOeC0me_E0rtDx56ljnihrY8U5JxkCleg",
-  authDomain: "los-aromos-4b29b.firebaseapp.com",
-  projectId: "los-aromos-4b29b",
-  storageBucket: "los-aromos-4b29b.firebasestorage.app",
-  messagingSenderId: "969960941827",
-  appId: "1:969960941827:web:d2b1863bcd2ee02c026136"
+// --- CONFIGURACIÓN DE FIREBASE ---
+// Priorizamos la configuración del entorno para evitar errores de permisos, 
+// pero mantenemos tu configuración real como respaldo.
+const getFirebaseConfig = () => {
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    return JSON.parse(__firebase_config);
+  }
+  return {
+    apiKey: "AIzaSyDOeC0me_E0rtDx56ljnihrY8U5JxkCleg",
+    authDomain: "los-aromos-4b29b.firebaseapp.com",
+    projectId: "los-aromos-4b29b",
+    storageBucket: "los-aromos-4b29b.firebasestorage.app",
+    messagingSenderId: "969960941827",
+    appId: "1:969960941827:web:d2b1863bcd2ee02c026136"
+  };
 };
 
-// Inicialización de los servicios
+const firebaseConfig = getFirebaseConfig();
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Saneamiento de AppId para Firestore (Regla 1)
+// REGLA 1: Saneamiento estricto del appId para evitar errores de segmentos (odd number of segments)
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'los-aromos-4b29b';
-const appId = rawAppId.replace(/\//g, '_');
+const appId = rawAppId.replace(/\//g, '_'); 
 
-// --- UTILIDAD PARA GENERAR PDF ---
 const loadJsPDF = () => {
   return new Promise((resolve) => {
     if (window.jspdf) return resolve(window.jspdf);
@@ -49,12 +84,13 @@ const App = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [authError, setAuthError] = useState(null);
 
   const [newBooking, setNewBooking] = useState({
     bungalowId: "1", name: '', phone: '', guests: 1, checkin: '', checkout: '', deposit: 0
   });
 
-  // 1. Manejo de Autenticación (Regla 3)
+  // REGLA 3: Autenticación obligatoria antes de cualquier consulta
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -63,23 +99,27 @@ const App = () => {
         } else {
           await signInAnonymously(auth);
         }
-      } catch (err) { console.error("Error en Firebase Auth:", err); }
+      } catch (err) { 
+        console.error("Error en Firebase Auth:", err);
+        setAuthError("Error de autenticación. Verifica las reglas de tu consola de Firebase.");
+      }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
-  // 2. Sincronización en Tiempo Real (Regla 1)
+  // REGLA 1 y 2: Consultas simples y rutas públicas
   useEffect(() => {
     if (!user) return;
 
-    // Sincronizar Cabañas
+    // Ruta de 5 segmentos: artifacts / {appId} / public / data / {coleccion}
     const bRef = collection(db, 'artifacts', appId, 'public', 'data', 'bungalows');
     const unsubB = onSnapshot(bRef, (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (data.length === 0) {
-        for(let i=1; i<=12; i++) {
+        // Inicializar datos si la colección está vacía
+        for(let i = 1; i <= 12; i++) {
           setDoc(doc(bRef, i.toString()), { 
             name: `Bungalow ${i.toString().padStart(2, '0')}`, 
             status: 'free' 
@@ -87,24 +127,21 @@ const App = () => {
         }
       }
       setBungalows(data.sort((a, b) => parseInt(a.id) - parseInt(b.id)));
-    });
+    }, (err) => console.error("Error Firestore (Bungalows):", err));
 
-    // Sincronizar Reservas
     const rRef = collection(db, 'artifacts', appId, 'public', 'data', 'reservations');
     const unsubR = onSnapshot(rRef, (snap) => {
       setReservations(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error("Error Firestore (Reservas):", err));
 
-    // Sincronizar Mantenimiento
     const mRef = collection(db, 'artifacts', appId, 'public', 'data', 'maintenance');
     const unsubM = onSnapshot(mRef, (snap) => {
       setMaintenance(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error("Error Firestore (Mantenimiento):", err));
 
     return () => { unsubB(); unsubR(); unsubM(); };
   }, [user]);
 
-  // --- LÓGICA DE CALENDARIO ---
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -124,10 +161,9 @@ const App = () => {
     });
   };
 
-  // --- ACCIONES DE FIREBASE ---
   const handleAddBooking = async (e) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || isProcessing) return;
     setIsProcessing(true);
     try {
       const rRef = collection(db, 'artifacts', appId, 'public', 'data', 'reservations');
@@ -136,7 +172,9 @@ const App = () => {
       await updateDoc(bDoc, { status: 'occupied' });
       setShowAddModal(false);
       setNewBooking({ bungalowId: "1", name: '', phone: '', guests: 1, checkin: '', checkout: '', deposit: 0 });
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error("Error guardando reserva:", err);
+    }
     setIsProcessing(false);
   };
 
@@ -146,7 +184,6 @@ const App = () => {
     await updateDoc(bDoc, { status: newStatus });
   };
 
-  // --- COMUNICACIONES Y PDF ---
   const sendWhatsApp = (res) => {
     const bungalow = bungalows.find(b => b.id === res.bungalowId?.toString());
     const message = `Hola ${res.name}! 👋 Confirmamos tu reserva en *Los Aromos* 🌿%0A%0A🏠 *${bungalow?.name || 'Cabaña'}*%0A📅 *Entrada:* ${res.checkin}%0A📅 *Salida:* ${res.checkout}%0A💰 *Seña:* $${res.deposit}`;
@@ -161,11 +198,11 @@ const App = () => {
     pdf.setFontSize(10);
     pdf.text("COMPROBANTE DE PAGO DE RESERVA", 20, 32);
     pdf.setFontSize(12);
-    pdf.text(`Huésped: ${res.name}`, 20, 50);
+    pdf.text(`Huesped: ${res.name}`, 20, 50);
     pdf.text(`Unidad: Bungalow ${res.bungalowId}`, 20, 60);
     pdf.text(`Periodo: ${res.checkin} al ${res.checkout}`, 20, 70);
     pdf.setFontSize(16);
-    pdf.text(`SEÑA RECIBIDA: $${res.deposit}`, 20, 90);
+    pdf.text(`SENA RECIBIDA: $${res.deposit}`, 20, 90);
     pdf.save(`Recibo_Aromos_${res.name.replace(/\s/g, '_')}.pdf`);
   };
 
@@ -176,15 +213,30 @@ const App = () => {
     income: reservations.reduce((acc, r) => acc + (parseFloat(r.deposit) || 0), 0)
   }), [bungalows, reservations, maintenance]);
 
-  if (!user) return <div className="h-screen flex flex-col items-center justify-center bg-[#0F172A] text-white font-black animate-pulse">Sincronizando Los Aromos...</div>;
+  if (authError) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 text-center">
+      <div className="bg-red-500/20 border border-red-500 p-8 rounded-3xl max-w-md">
+        <h2 className="text-2xl font-black mb-4">Error de Permisos</h2>
+        <p className="text-slate-300 mb-6">{authError}</p>
+        <p className="text-sm text-slate-400 italic">
+          Nota: Si usas tu propio proyecto, asegúrate de que las reglas de Firestore permitan lectura/escritura pública en la consola de Firebase.
+        </p>
+      </div>
+    </div>
+  );
+
+  if (!user) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-[#0F172A] text-white font-black animate-pulse">
+      <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+      <p className="tracking-widest uppercase">Sincronizando Sistema Los Aromos...</p>
+    </div>
+  );
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] text-slate-900 font-sans">
-      
-      {/* Sidebar Navigation */}
       <aside className="w-72 bg-[#0F172A] text-white hidden lg:flex flex-col shadow-2xl z-30">
         <div className="p-8 border-b border-slate-800 flex items-center gap-3">
-          <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+          <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg">
             <Home size={24} />
           </div>
           <div>
@@ -200,11 +252,11 @@ const App = () => {
       </aside>
 
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white border-b border-slate-200 px-8 py-5 flex justify-between items-center z-20">
+        <header className="bg-white border-b border-slate-200 px-8 py-5 flex justify-between items-center z-20 shadow-sm">
           <h2 className="text-2xl font-black uppercase text-slate-800 tracking-tight">
             {activeTab === 'dashboard' ? 'Control de Cabañas' : activeTab === 'maintenance' ? 'Tareas de Servicio' : 'Resumen Financiero'}
           </h2>
-          <button onClick={() => setShowAddModal(true)} className="bg-[#0F172A] text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-xl active:scale-95">
+          <button onClick={() => setShowAddModal(true)} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl active:scale-95">
             <Plus size={20} /> Nueva Reserva
           </button>
         </header>
@@ -248,16 +300,15 @@ const App = () => {
         </div>
       </main>
 
-      {/* MODAL RESERVA */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col md:flex-row h-[90vh]">
+          <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-6xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh]">
             <div className="md:w-5/12 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800 overflow-y-auto">
               <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black tracking-tight">Ocupación</h3>
                 <div className="flex gap-2">
-                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-800 rounded-2xl"><ChevronLeft size={20}/></button>
-                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-800 rounded-2xl rotate-180"><ChevronLeft size={20}/></button>
+                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-600 transition-all text-white"><ChevronLeft size={20}/></button>
+                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-600 transition-all rotate-180 text-white"><ChevronLeft size={20}/></button>
                 </div>
               </div>
               <div className="grid grid-cols-7 mb-4 text-center">
@@ -271,7 +322,7 @@ const App = () => {
                   for (let d = 1; d <= days; d++) {
                     const occupied = isDateOccupied(d, month, year, newBooking.bungalowId);
                     cells.push(
-                      <div key={d} className={`aspect-square flex items-center justify-center rounded-2xl text-xs font-bold ${occupied ? 'bg-red-500/20 text-red-400 border border-red-500/30 line-through' : 'bg-slate-800/40 text-slate-400'}`}>
+                      <div key={d} className={`aspect-square flex items-center justify-center rounded-2xl text-xs font-bold transition-all ${occupied ? 'bg-red-500/20 text-red-400 border border-red-500/30 line-through' : 'bg-slate-800/40 text-slate-400'}`}>
                         {d}
                       </div>
                     );
@@ -296,12 +347,18 @@ const App = () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <input type="text" required placeholder="Huésped" className="p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={newBooking.name} onChange={(e) => setNewBooking({...newBooking, name: e.target.value})} />
-                  <input type="tel" required placeholder="WhatsApp" className="p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={newBooking.phone} onChange={(e) => setNewBooking({...newBooking, phone: e.target.value})} />
+                  <input type="text" required placeholder="Huesped" className="p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-900" value={newBooking.name} onChange={(e) => setNewBooking({...newBooking, name: e.target.value})} />
+                  <input type="tel" required placeholder="WhatsApp" className="p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-900" value={newBooking.phone} onChange={(e) => setNewBooking({...newBooking, phone: e.target.value})} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <input type="date" required className="p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold" value={newBooking.checkin} onChange={(e) => setNewBooking({...newBooking, checkin: e.target.value})} />
-                  <input type="date" required className="p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold" value={newBooking.checkout} onChange={(e) => setNewBooking({...newBooking, checkout: e.target.value})} />
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 ml-1 uppercase">Entrada</label>
+                    <input type="date" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900" value={newBooking.checkin} onChange={(e) => setNewBooking({...newBooking, checkin: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 ml-1 uppercase">Salida</label>
+                    <input type="date" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900" value={newBooking.checkout} onChange={(e) => setNewBooking({...newBooking, checkout: e.target.value})} />
+                  </div>
                 </div>
                 <div className="bg-emerald-50 p-8 rounded-[2.5rem] border border-emerald-100 shadow-inner">
                   <label className="text-[10px] font-black text-emerald-600 uppercase mb-2 block">Seña Cobrada ($)</label>
@@ -319,8 +376,6 @@ const App = () => {
   );
 };
 
-// --- COMPONENTES ---
-
 const NavItem = ({ icon: Icon, label, active, onClick, badge }) => (
   <button onClick={onClick} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl transition-all ${active ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'}`}>
     <div className="flex items-center gap-4">
@@ -335,8 +390,8 @@ const StatCard = ({ icon: Icon, label, value, color, bg }) => (
   <div className={`p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-6 ${bg}`}>
     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${color} bg-white shadow-sm`}><Icon size={28} /></div>
     <div>
-      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</p>
-      <p className={`text-3xl font-black ${color} tracking-tighter`}>{value}</p>
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{String(label)}</p>
+      <p className={`text-3xl font-black ${color} tracking-tighter`}>{String(value)}</p>
     </div>
   </div>
 );
@@ -368,7 +423,7 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF }) 
         {data.status === 'occupied' && reservation ? (
           <div className="space-y-4 mt-6 animate-in">
             <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 shadow-inner">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Huésped</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Huesped</p>
               <p className="text-lg font-black text-slate-700 truncate">{String(reservation.name)}</p>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -379,7 +434,7 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF }) 
                 <FileText size={14} /> PDF
               </button>
             </div>
-            <div className="flex justify-between items-end pt-4 border-t border-slate-50">
+            <div className="flex justify-between items-end pt-4 border-t border-slate-50 text-slate-900">
               <div><p className="text-[10px] font-black text-slate-400 uppercase">Salida</p><p className="text-sm font-black text-red-500">{String(reservation.checkout)}</p></div>
               <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase">Seña</p><p className="text-sm font-black text-emerald-600">${String(reservation.deposit)}</p></div>
             </div>
