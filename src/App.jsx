@@ -9,7 +9,7 @@ import {
   CheckCircle2, Clock, AlertCircle, MoreVertical, ChevronRight, 
   LogOut, Plus, DollarSign, Info, Send, Download, ChevronLeft, X,
   Wrench, BarChart3, Package, Trash2, FileText, CreditCard, Wallet, 
-  AlertTriangle, TrendingUp, TrendingDown, ClipboardList
+  AlertTriangle, TrendingUp, TrendingDown, ClipboardList, Phone
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN FIREBASE SEGURA ---
@@ -33,7 +33,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// REGLA 1: Saneamiento estricto del appId
+// Saneamiento de appId
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'los-aromos-admin-total';
 const appId = rawAppId.replace(/[^a-zA-Z0-9]/g, '_'); 
 
@@ -83,7 +83,7 @@ const App = () => {
     date: new Date().toISOString().split('T')[0]
   });
 
-  // 1. Autenticación (REGLA 3)
+  // 1. Autenticación
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -106,7 +106,7 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Sincronización Firestore (REGLA 1 y 2)
+  // 2. Sincronización Firestore
   useEffect(() => {
     if (!user) return;
     
@@ -139,9 +139,8 @@ const App = () => {
     return () => { unsubB(); unsubR(); unsubM(); unsubE(); };
   }, [user]);
 
-  // Lógica de Negocio
+  // Lógica de Movimientos Diarios
   const todayStr = new Date().toISOString().split('T')[0];
-
   const dailyAgenda = useMemo(() => {
     const checkins = reservations.filter(r => r.checkin === todayStr);
     const checkouts = reservations.filter(r => r.checkout === todayStr);
@@ -254,7 +253,12 @@ const App = () => {
     pdf.text(`SEÑA RECIBIDA: $${String(res.deposit)}`, 20, 100);
     pdf.setFontSize(9);
     pdf.text(`Generado: ${new Date().toLocaleString()}`, 20, 120);
-    pdf.save(`Recibo_LosAromos_${String(res.name)}.pdf`);
+    pdf.save(`Recibo_LosAromos_${String(res.name).replace(/\s/g, '_')}.pdf`);
+  };
+
+  const openBungalowDetail = (b) => {
+    setSelectedBungalow(b);
+    setShowDetailModal(true);
   };
 
   if (authError || !user) return (
@@ -263,7 +267,6 @@ const App = () => {
         <div className="animate-pulse flex flex-col items-center">
           <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
           <h2 className="text-xl font-black uppercase tracking-widest leading-none">Iniciando Los Aromos...</h2>
-          <p className="text-slate-500 mt-4 text-xs font-bold uppercase">Sincronizando Gestión Global</p>
         </div>
       ) : (
         <div className="max-w-md bg-red-500/10 border border-red-500 p-8 rounded-[2.5rem] shadow-2xl">
@@ -459,6 +462,24 @@ const App = () => {
                </div>
             </div>
           )}
+
+          {activeTab === 'maintenance' && (
+             <div className="max-w-4xl bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm animate-in slide-in-from-bottom-4">
+                <h3 className="text-xl font-black mb-6 uppercase">Tareas de Mantenimiento Pendientes</h3>
+                <div className="space-y-4">
+                  {maintenance.filter(m => m.status === 'pending').map(m => (
+                    <div key={m.id} className="p-5 bg-slate-50 rounded-2xl border flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <span className="w-10 h-10 bg-slate-200 rounded-xl flex items-center justify-center font-black">#{m.bungalowId}</span>
+                        <p className="font-bold text-slate-700">{m.task}</p>
+                      </div>
+                      <button onClick={() => deleteMaintenance(m.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18}/></button>
+                    </div>
+                  ))}
+                  {maintenance.filter(m => m.status === 'pending').length === 0 && <div className="py-20 text-center text-slate-300 font-bold uppercase">Sin tareas pendientes</div>}
+                </div>
+             </div>
+          )}
         </div>
       </main>
 
@@ -468,7 +489,7 @@ const App = () => {
           <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row h-[85vh] animate-in zoom-in-95 duration-300">
              <div className="md:w-1/2 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800">
                 <div className="flex justify-between items-center mb-10">
-                  <h3 className="text-3xl font-black tracking-tight uppercase">{String(selectedBungalow.name)}</h3>
+                  <h3 className="text-3xl font-black tracking-tight uppercase leading-none">{String(selectedBungalow.name)}</h3>
                   <div className="flex gap-2">
                     <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-800 text-white rounded-2xl hover:bg-emerald-500 transition-all"><ChevronLeft size={20}/></button>
                     <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-800 text-white rounded-2xl hover:bg-emerald-500 transition-all rotate-180"><ChevronLeft size={20}/></button>
@@ -495,19 +516,19 @@ const App = () => {
                 </div>
                 <div className="mt-auto p-6 bg-slate-800/30 rounded-3xl flex gap-4 text-[10px] font-black uppercase tracking-widest text-slate-400">
                     <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-500 rounded-full"></div> Ocupado</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500/40 rounded-full"></div> Libre</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500/40 rounded-full"></div> Disponible</div>
                 </div>
              </div>
              <div className="md:w-1/2 p-12 bg-white relative overflow-y-auto text-slate-900 scroll-smooth">
                 <button onClick={() => setShowDetailModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200 transition-all"><X/></button>
-                <h3 className="text-3xl font-black mb-10 tracking-tighter uppercase">Historial de Reservas</h3>
+                <h3 className="text-3xl font-black mb-10 tracking-tighter uppercase text-slate-800 border-b-2 border-slate-50 pb-4">Historial de Reservas</h3>
                 <div className="space-y-5">
                   {reservations.filter(r => r.bungalowId === selectedBungalow.id).length > 0 ? (
                     reservations.filter(r => r.bungalowId === selectedBungalow.id).sort((a,b) => new Date(b.checkin) - new Date(a.checkin)).map(r => (
                       <div key={String(r.id)} className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 flex flex-col gap-3 shadow-sm hover:shadow-md transition-all">
                         <div className="flex justify-between items-center">
                            <span className="font-black text-xl text-slate-700">{String(r.name)}</span>
-                           <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-4 py-1.5 rounded-full uppercase tracking-tighter">{String(r.paymentMethod || 'Efectivo')}</span>
+                           <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-4 py-1.5 rounded-full uppercase tracking-tighter shadow-sm">{String(r.paymentMethod || 'Efectivo')}</span>
                         </div>
                         <div className="flex justify-between text-sm text-slate-500 font-black">
                            <span className="flex items-center gap-2"><CalendarDays size={14}/> {String(r.checkin)} ➔ {String(r.checkout)}</span>
@@ -518,7 +539,7 @@ const App = () => {
                   ) : (
                     <div className="py-24 text-center">
                        <Package size={48} className="mx-auto text-slate-200 mb-4" />
-                       <p className="text-slate-300 font-black uppercase tracking-widest">Sin historial aún</p>
+                       <p className="text-slate-300 font-black uppercase tracking-widest">Sin registros históricos</p>
                     </div>
                   )}
                 </div>
@@ -535,8 +556,8 @@ const App = () => {
               <div className="flex justify-between items-center mb-10">
                 <h3 className="text-2xl font-black tracking-tight uppercase leading-none">Mapa de<br/>Disponibilidad</h3>
                 <div className="flex gap-2">
-                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-600 transition-all text-white"><ChevronLeft size={20}/></button>
-                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-600 transition-all rotate-180 text-white"><ChevronLeft size={20}/></button>
+                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-800 text-white rounded-2xl hover:bg-emerald-600 transition-all"><ChevronLeft size={20}/></button>
+                  <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-800 text-white rounded-2xl hover:bg-emerald-600 transition-all rotate-180"><ChevronLeft size={20}/></button>
                 </div>
               </div>
               <div className="grid grid-cols-7 mb-6 text-center">
@@ -565,7 +586,7 @@ const App = () => {
             </div>
             <div className="md:w-7/12 p-12 bg-white relative overflow-y-auto text-slate-900 scroll-smooth">
               <button onClick={() => setShowAddModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200 transition-all"><X/></button>
-              <h3 className="text-4xl font-black mb-10 tracking-tighter uppercase">Nueva Reserva</h3>
+              <h3 className="text-4xl font-black mb-10 tracking-tighter uppercase text-slate-800 font-black">Registrar Reserva</h3>
               <form onSubmit={handleAddBooking} className="space-y-8">
                 <div className="space-y-4">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seleccionar Unidad</label>
@@ -578,26 +599,14 @@ const App = () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Huésped</label>
-                    <input type="text" required placeholder="Familia o Nombre" className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 font-bold transition-all" value={newBooking.name} onChange={(e) => setNewBooking({...newBooking, name: e.target.value})} />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp</label>
-                    <input type="tel" required placeholder="+54 9..." className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 font-bold transition-all" value={newBooking.phone} onChange={(e) => setNewBooking({...newBooking, phone: e.target.value})} />
-                  </div>
+                  <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Huésped</label><input type="text" required placeholder="Familia o Nombre" className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold" value={newBooking.name} onChange={(e) => setNewBooking({...newBooking, name: e.target.value})} /></div>
+                  <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp</label><input type="tel" required placeholder="+54 9..." className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold" value={newBooking.phone} onChange={(e) => setNewBooking({...newBooking, phone: e.target.value})} /></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 font-bold">Fecha Entrada</label>
-                    <input type="date" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold transition-all cursor-pointer" value={newBooking.checkin} onChange={(e) => setNewBooking({...newBooking, checkin: e.target.value})} />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 font-bold">Fecha Salida</label>
-                    <input type="date" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold transition-all cursor-pointer" value={newBooking.checkout} onChange={(e) => setNewBooking({...newBooking, checkout: e.target.value})} />
-                  </div>
+                  <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Entrada</label><input type="date" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold" value={newBooking.checkin} onChange={(e) => setNewBooking({...newBooking, checkin: e.target.value})} /></div>
+                  <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Salida</label><input type="date" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold" value={newBooking.checkout} onChange={(e) => setNewBooking({...newBooking, checkout: e.target.value})} /></div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50 p-10 rounded-[3.5rem] border border-slate-100 shadow-inner">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50 p-10 rounded-[3rem] border border-slate-100 shadow-inner">
                     <div className="flex flex-col gap-6 justify-center">
                         <label className="flex items-center gap-4 cursor-pointer group">
                            <div className="relative">
@@ -610,8 +619,8 @@ const App = () => {
                         <div className="space-y-3">
                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pago</label>
                            <div className="flex gap-3">
-                                <button type="button" onClick={() => setNewBooking({...newBooking, paymentMethod: 'Efectivo'})} className={`flex-1 py-4 rounded-2xl text-[10px] font-black flex items-center justify-center gap-2 border-2 transition-all uppercase ${newBooking.paymentMethod === 'Efectivo' ? 'bg-slate-900 border-slate-900 text-white shadow-2xl' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}><Wallet size={16}/> Efectivo</button>
-                                <button type="button" onClick={() => setNewBooking({...newBooking, paymentMethod: 'MercadoPago'})} className={`flex-1 py-4 rounded-2xl text-[10px] font-black flex items-center justify-center gap-2 border-2 transition-all uppercase ${newBooking.paymentMethod === 'MercadoPago' ? 'bg-[#009EE3] border-[#009EE3] text-white shadow-2xl' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}><CreditCard size={16}/> MercadoPago</button>
+                                <button type="button" onClick={() => setNewBooking({...newBooking, paymentMethod: 'Efectivo'})} className={`flex-1 py-4 rounded-2xl text-[10px] font-black flex items-center justify-center gap-2 border-2 transition-all uppercase ${newBooking.paymentMethod === 'Efectivo' ? 'bg-slate-900 border-slate-900 text-white shadow-2xl' : 'bg-white border-slate-200 text-slate-400'}`}><Wallet size={16}/> Efectivo</button>
+                                <button type="button" onClick={() => setNewBooking({...newBooking, paymentMethod: 'MercadoPago'})} className={`flex-1 py-4 rounded-2xl text-[10px] font-black flex items-center justify-center gap-2 border-2 transition-all uppercase ${newBooking.paymentMethod === 'MercadoPago' ? 'bg-[#009EE3] border-[#009EE3] text-white shadow-2xl' : 'bg-white border-slate-200 text-slate-400'}`}><CreditCard size={16}/> MercadoPago</button>
                            </div>
                         </div>
                     </div>
@@ -623,10 +632,10 @@ const App = () => {
                 {newBooking.paymentMethod === 'MercadoPago' && (
                   <div className="flex items-center gap-6 p-8 bg-amber-50 border border-amber-200 rounded-[3rem] animate-pulse">
                     <div className="w-14 h-14 bg-amber-500 rounded-full flex items-center justify-center text-white shadow-lg"><AlertTriangle size={28} /></div>
-                    <p className="text-xs font-black text-amber-800 uppercase tracking-tight leading-relaxed">¡Atención Administrativa: Al cobrar por MercadoPago es obligatorio realizar la factura en el sistema externo!</p>
+                    <p className="text-xs font-black text-amber-800 uppercase tracking-tight leading-relaxed">¡Atención: Al cobrar por MercadoPago es obligatorio realizar la factura!</p>
                   </div>
                 )}
-                <button type="submit" disabled={isProcessing} className="w-full py-8 bg-[#0F172A] text-white rounded-[3rem] font-black text-2xl hover:bg-emerald-600 transition-all shadow-2xl active:scale-95 uppercase tracking-tighter">{isProcessing ? 'Procesando...' : 'Confirmar Reserva'}</button>
+                <button type="submit" disabled={isProcessing} className="w-full py-8 bg-[#0F172A] text-white rounded-[3rem] font-black text-2xl hover:bg-emerald-600 transition-all active:scale-95 uppercase">{isProcessing ? 'Procesando...' : 'Confirmar Reserva'}</button>
               </form>
             </div>
           </div>
@@ -636,21 +645,16 @@ const App = () => {
       {/* MODAL GASTO */}
       {showExpenseModal && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[120] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-xl p-12 text-slate-900 animate-in zoom-in-95 duration-300 relative">
+          <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-xl p-12 text-slate-900 relative animate-in zoom-in-95 duration-300">
              <button onClick={() => setShowExpenseModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200 transition-all"><X/></button>
              <h3 className="text-3xl font-black mb-10 tracking-tighter uppercase flex items-center gap-3"><TrendingDown className="text-red-500"/> Nuevo Gasto</h3>
              <form onSubmit={handleAddExpense} className="space-y-6">
-                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Descripción</label><input type="text" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold outline-none focus:ring-4 focus:ring-red-500/10" placeholder="Ej: Pago de Luz" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})}/></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Descripción</label><input type="text" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold outline-none" placeholder="Ej: Pago de Luz" value={newExpense.description} onChange={(e) => setNewExpense({...newExpense, description: e.target.value})}/></div>
                 <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Monto ($)</label><input type="number" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold outline-none focus:ring-4 focus:ring-red-500/10" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})}/></div>
-                   <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Fecha</label><input type="date" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold outline-none focus:ring-4 focus:ring-red-500/10" value={newExpense.date} onChange={(e) => setNewExpense({...newExpense, date: e.target.value})}/></div>
+                   <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Monto ($)</label><input type="number" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold outline-none" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})}/></div>
+                   <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Fecha</label><input type="date" required className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold outline-none" value={newExpense.date} onChange={(e) => setNewExpense({...newExpense, date: e.target.value})}/></div>
                 </div>
-                <div className="space-y-1">
-                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Categoría</label>
-                   <select className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold outline-none appearance-none" value={newExpense.category} onChange={(e) => setNewExpense({...newExpense, category: e.target.value})}>
-                      <option>Servicios</option><option>Mantenimiento</option><option>Limpieza</option><option>Sueldos</option><option>Otros</option>
-                   </select>
-                </div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase ml-1">Categoría</label><select className="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl font-bold outline-none" value={newExpense.category} onChange={(e) => setNewExpense({...newExpense, category: e.target.value})}><option>Servicios</option><option>Mantenimiento</option><option>Limpieza</option><option>Sueldos</option><option>Otros</option></select></div>
                 <button type="submit" disabled={isProcessing} className="w-full py-6 bg-red-500 text-white rounded-3xl font-black text-xl hover:bg-red-600 transition-all shadow-xl active:scale-95 uppercase tracking-tighter">Guardar Egreso</button>
              </form>
           </div>
@@ -691,10 +695,7 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF, on
   const config = statusStyles[data.status] || statusStyles.free;
 
   return (
-    <div 
-        onClick={onClick}
-        className="bg-white rounded-[4rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 overflow-hidden group flex flex-col cursor-pointer active:scale-[0.98]"
-    >
+    <div onClick={onClick} className="bg-white rounded-[4rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 overflow-hidden group flex flex-col cursor-pointer active:scale-[0.98]">
       <div className="p-10 flex-1 text-slate-900">
         <div className="flex justify-between items-start mb-10 text-slate-900">
           <div className={`px-5 py-2 rounded-full ${config.bg} ${config.text} text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm`}>
@@ -706,41 +707,24 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF, on
             <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'free'); }} className="p-3 bg-white hover:bg-emerald-50 text-emerald-600 rounded-2xl shadow-sm border border-slate-50 transition-all"><CheckCircle2 size={16}/></button>
           </div>
         </div>
-
         <h3 className="text-4xl font-black text-slate-800 tracking-tighter mb-2 uppercase leading-none">{String(data.name || data.id)}</h3>
-        
         {data.status === 'occupied' && reservation ? (
           <div className="space-y-5 mt-8 animate-in text-slate-900">
             <div className="bg-slate-50 p-7 rounded-[2.5rem] border border-slate-100 shadow-inner">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 leading-none">Huésped</p>
               <p className="text-xl font-black text-slate-700 truncate">{String(reservation.name)}</p>
             </div>
-            
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={(e) => { e.stopPropagation(); onWhatsApp(reservation); }} className="flex items-center justify-center gap-2 py-4 bg-emerald-600 text-white rounded-[2rem] text-[10px] font-black uppercase shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">
-                <Send size={14} /> WhatsApp
-              </button>
-              <button onClick={(e) => { e.stopPropagation(); onPDF(reservation); }} className="flex items-center justify-center gap-2 py-4 bg-slate-100 text-slate-600 rounded-[2rem] text-[10px] font-black uppercase active:scale-95 shadow-sm transition-all">
-                <Download size={14} /> PDF
-              </button>
+              <button onClick={(e) => { e.stopPropagation(); onWhatsApp(reservation); }} className="flex items-center justify-center gap-2 py-4 bg-emerald-600 text-white rounded-[2rem] text-[10px] font-black uppercase shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"><Send size={14} /> WhatsApp</button>
+              <button onClick={(e) => { e.stopPropagation(); onPDF(reservation); }} className="flex items-center justify-center gap-2 py-4 bg-slate-100 text-slate-600 rounded-[2rem] text-[10px] font-black uppercase active:scale-95 shadow-sm transition-all"><Download size={14} /> PDF</button>
             </div>
-
             <div className="flex justify-between items-end pt-5 border-t border-slate-50 text-slate-900">
-              <div className="flex flex-col gap-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Salida</p>
-                <p className="text-base font-black text-red-500">{String(reservation.checkout)}</p>
-              </div>
-              <div className="text-right flex flex-col gap-1">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Seña</p>
-                <p className="text-lg font-black text-emerald-600">${String(reservation.deposit)}</p>
-              </div>
+              <div className="flex flex-col gap-1"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Salida</p><p className="text-base font-black text-red-500">{String(reservation.checkout)}</p></div>
+              <div className="text-right flex flex-col gap-1"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Seña</p><p className="text-lg font-black text-emerald-600">${String(reservation.deposit)}</p></div>
             </div>
           </div>
         ) : (
-          <div className="h-48 flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded-[3rem] mt-8 bg-slate-50/50 text-slate-200 shadow-inner group-hover:bg-slate-50 transition-all">
-             <Package size={32} className="opacity-50" />
-             <p className="text-[10px] font-black uppercase mt-4 tracking-widest opacity-50">Sin reservas activas</p>
-          </div>
+          <div className="h-48 flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded-[3rem] mt-8 bg-slate-50/50 text-slate-200 shadow-inner group-hover:bg-slate-50 transition-all"><Package size={32} className="opacity-50" /><p className="text-[10px] font-black uppercase mt-4 tracking-widest opacity-50">Sin reservas activas</p></div>
         )}
       </div>
     </div>
