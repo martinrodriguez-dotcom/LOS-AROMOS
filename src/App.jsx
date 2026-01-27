@@ -32,7 +32,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// REGLA 1: Saneamiento estricto del appId (Evita errores de segmentos pares/impares)
+// REGLA 1: Saneamiento estricto del appId
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'los-aromos-admin-total';
 const appId = rawAppId.replace(/[^a-zA-Z0-9]/g, '_'); 
 
@@ -72,7 +72,7 @@ const App = () => {
     paymentMethod: 'Efectivo'
   });
 
-  // 1. Autenticación con manejo de errores para evitar carga infinita
+  // 1. Autenticación
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -82,7 +82,6 @@ const App = () => {
           await signInAnonymously(auth);
         }
       } catch (err) { 
-        console.error("Error de Auth:", err);
         setAuthError(err.message);
       }
     };
@@ -109,17 +108,17 @@ const App = () => {
         }
       }
       setBungalows(data.sort((a, b) => parseInt(a.id) - parseInt(b.id)));
-    }, (err) => setAuthError("Error Firestore Bungalows: " + err.message));
+    });
 
     const rRef = collection(db, 'artifacts', appId, 'public', 'data', 'reservations');
     const unsubR = onSnapshot(rRef, (snap) => {
       setReservations(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => setAuthError("Error Firestore Reservas: " + err.message));
+    });
 
     const mRef = collection(db, 'artifacts', appId, 'public', 'data', 'maintenance');
     const unsubM = onSnapshot(mRef, (snap) => {
       setMaintenance(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => setAuthError("Error Firestore Mantenimiento: " + err.message));
+    });
 
     return () => { unsubB(); unsubR(); unsubM(); };
   }, [user]);
@@ -187,19 +186,17 @@ const App = () => {
     pdf.setFontSize(22);
     pdf.text("LOS AROMOS", 20, 25);
     pdf.setFontSize(10);
-    pdf.text("COMPROBANTE DE PAGO DE RESERVA", 20, 32);
-    
+    pdf.text("COMPROBANTE DE RESERVA", 20, 32);
     pdf.setFontSize(12);
-    pdf.text(`Huésped: ${String(res.name)}`, 20, 50);
+    pdf.text(`Huesped: ${String(res.name)}`, 20, 50);
     pdf.text(`Unidad: Bungalow ${String(res.bungalowId)}`, 20, 60);
     pdf.text(`Periodo: ${String(res.checkin)} al ${String(res.checkout)}`, 20, 70);
     pdf.text(`Forma de Pago: ${String(res.paymentMethod)}`, 20, 80);
     pdf.setFontSize(16);
-    pdf.text(`SEÑA RECIBIDA: $${String(res.deposit)}`, 20, 100);
-    
+    pdf.text(`SENA RECIBIDA: $${String(res.deposit)}`, 20, 100);
     pdf.setFontSize(9);
-    pdf.text(`Generado el: ${new Date().toLocaleString()}`, 20, 120);
-    pdf.save(`Recibo_LosAromos_${String(res.name).replace(/\s/g, '_')}.pdf`);
+    pdf.text(`Generado: ${new Date().toLocaleString()}`, 20, 120);
+    pdf.save(`Recibo_Aromos_${String(res.name).replace(/\s/g, '_')}.pdf`);
   };
 
   const stats = useMemo(() => ({
@@ -214,21 +211,19 @@ const App = () => {
     setShowDetailModal(true);
   };
 
-  // Renderizado de Pantalla de Carga o Error
   if (authError || !user) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 text-center font-sans">
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 text-center">
       {!authError ? (
-        <>
+        <div className="animate-pulse flex flex-col items-center">
           <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
           <h2 className="text-xl font-black uppercase tracking-widest">Iniciando Los Aromos...</h2>
-          <p className="text-slate-400 mt-2 text-sm">Sincronizando con base de datos real</p>
-        </>
+        </div>
       ) : (
         <div className="max-w-md bg-red-500/10 border border-red-500 p-8 rounded-[2.5rem] shadow-2xl">
           <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-black mb-2 uppercase">Error de Conexión</h2>
           <p className="text-slate-300 text-sm mb-6 leading-relaxed">{authError}</p>
-          <button onClick={() => window.location.reload()} className="px-8 py-3 bg-red-500 hover:bg-red-600 rounded-2xl font-black transition-all">REINTENTAR CONEXIÓN</button>
+          <button onClick={() => window.location.reload()} className="px-8 py-3 bg-red-500 hover:bg-red-600 rounded-2xl font-black transition-all">REINTENTAR</button>
         </div>
       )}
     </div>
@@ -237,7 +232,7 @@ const App = () => {
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] text-slate-900 font-sans">
       
-      {/* Sidebar de Navegación */}
+      {/* Sidebar Navigation */}
       <aside className="w-72 bg-[#0F172A] text-white hidden lg:flex flex-col shadow-2xl z-30">
         <div className="p-8 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -246,7 +241,7 @@ const App = () => {
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tighter uppercase">Los Aromos</h1>
-              <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Administración</p>
+              <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Panel Administrativo</p>
             </div>
           </div>
         </div>
@@ -257,13 +252,11 @@ const App = () => {
         </nav>
       </aside>
 
-      {/* Área Principal */}
+      {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="bg-white border-b border-slate-200 px-8 py-5 flex justify-between items-center z-20 shadow-sm">
           <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase">
-            {activeTab === 'dashboard' && 'Panel de Control General'}
-            {activeTab === 'maintenance' && 'Tareas Pendientes'}
-            {activeTab === 'reports' && 'Estadísticas de Negocio'}
+            {activeTab === 'dashboard' ? 'Panel de Control General' : activeTab === 'maintenance' ? 'Tareas Pendientes' : 'Estadísticas de Negocio'}
           </h2>
           <button 
             onClick={() => setShowAddModal(true)}
@@ -279,8 +272,8 @@ const App = () => {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10 text-slate-900">
                 <StatCard label="Libres" value={stats.free} color="text-emerald-600" bg="bg-emerald-50" icon={CheckCircle2} />
                 <StatCard label="Ocupados" value={stats.occupied} color="text-blue-600" bg="bg-blue-50" icon={Users} />
-                <StatCard label="Mantenimiento" value={stats.maintenanceCount} color="text-amber-600" bg="bg-amber-50" icon={Wrench} />
-                <StatCard label="Recaudación" value={`$${stats.totalIncome}`} color="text-slate-700" bg="bg-white" icon={DollarSign} />
+                <StatCard label="Tareas" value={stats.maintenanceCount} color="text-amber-600" bg="bg-amber-50" icon={Wrench} />
+                <StatCard label="Caja Total" value={`$${stats.totalIncome}`} color="text-slate-700" bg="bg-white" icon={DollarSign} />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -303,7 +296,7 @@ const App = () => {
             <div className="max-w-4xl bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm animate-in slide-in-from-bottom-4">
               <h3 className="text-xl font-black mb-6 uppercase">Tareas de Mantenimiento</h3>
               <div className="space-y-4">
-                {maintenance.length > 0 ? maintenance.filter(m => m.status === 'pending').map(m => (
+                {maintenance.filter(m => m.status === 'pending').map(m => (
                   <div key={m.id} className="p-5 bg-slate-50 rounded-2xl border flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <span className="w-10 h-10 bg-slate-200 rounded-xl flex items-center justify-center font-black">#{m.bungalowId}</span>
@@ -311,7 +304,10 @@ const App = () => {
                     </div>
                     <button onClick={() => deleteMaintenance(m.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18}/></button>
                   </div>
-                )) : <div className="py-10 text-center text-slate-300 font-bold uppercase">No hay tareas pendientes</div>}
+                ))}
+                {maintenance.filter(m => m.status === 'pending').length === 0 && (
+                  <div className="py-20 text-center text-slate-300 font-bold uppercase">No hay tareas pendientes</div>
+                )}
               </div>
             </div>
           )}
@@ -320,7 +316,7 @@ const App = () => {
             <div className="max-w-5xl space-y-8 animate-in fade-in duration-500">
                <div className="bg-[#0F172A] p-10 rounded-[3rem] text-white flex justify-between items-center shadow-2xl">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-2">Total Recaudado por Señas</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-2">Ingresos por Señas</p>
                     <h3 className="text-6xl font-black tracking-tighter">${stats.totalIncome}</h3>
                   </div>
                   <BarChart3 size={64} className="text-slate-800" />
@@ -344,17 +340,17 @@ const App = () => {
         </div>
       </main>
 
-      {/* MODAL DE DETALLE DE BUNGALOW (Visualización de Reservas y Disponibilidad) */}
+      {/* MODAL DETALLE BUNGALOW (RESERVAS + CALENDARIO ESPECIFICO) */}
       {showDetailModal && selectedBungalow && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[110] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-5xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[85vh]">
-             {/* Calendario de Disponibilidad Visual */}
-             <div className="md:w-1/2 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800 overflow-y-auto">
+          <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row h-[85vh] animate-in zoom-in-95 duration-300">
+             {/* Calendario FIJO a la izquierda */}
+             <div className="md:w-1/2 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800">
                 <div className="flex justify-between items-center mb-8">
-                  <h3 className="text-2xl font-black tracking-tight uppercase">Disponibilidad: {String(selectedBungalow.name)}</h3>
+                  <h3 className="text-2xl font-black tracking-tight uppercase">{String(selectedBungalow.name)}</h3>
                   <div className="flex gap-2">
-                    <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-100 text-slate-900 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all"><ChevronLeft size={20}/></button>
-                    <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-100 text-slate-900 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all rotate-180"><ChevronLeft size={20}/></button>
+                    <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-500 transition-all"><ChevronLeft size={20}/></button>
+                    <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-500 transition-all rotate-180"><ChevronLeft size={20}/></button>
                   </div>
                 </div>
                 <div className="grid grid-cols-7 mb-4 text-center">
@@ -378,29 +374,29 @@ const App = () => {
                 </div>
                 <div className="mt-8 flex gap-4 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                     <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-500 rounded-full"></div> Ocupado</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500/40 rounded-full border border-emerald-500/40"></div> Disponible</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500/40 rounded-full"></div> Disponible</div>
                 </div>
              </div>
-             {/* Listado de Reservas Hechas */}
+             {/* Listado de Reservas con SCROLL */}
              <div className="md:w-1/2 p-12 bg-white relative overflow-y-auto text-slate-900">
                 <button onClick={() => setShowDetailModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200 transition-all"><X/></button>
-                <h3 className="text-3xl font-black mb-8 tracking-tighter uppercase text-slate-800">Historial de Reservas</h3>
+                <h3 className="text-3xl font-black mb-8 tracking-tighter uppercase">Historial de Reservas</h3>
                 <div className="space-y-4">
                   {reservations.filter(r => r.bungalowId === selectedBungalow.id).length > 0 ? (
                     reservations.filter(r => r.bungalowId === selectedBungalow.id).sort((a,b) => new Date(b.checkin) - new Date(a.checkin)).map(r => (
-                      <div key={String(r.id)} className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 flex flex-col gap-2 shadow-sm">
+                      <div key={String(r.id)} className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 flex flex-col gap-2">
                         <div className="flex justify-between items-center">
-                           <span className="font-black text-lg text-slate-700">{String(r.name)}</span>
-                           <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full uppercase">{String(r.paymentMethod || 'Efectivo')}</span>
+                           <span className="font-black text-lg">{String(r.name)}</span>
+                           <span className="text-[10px] font-black bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full uppercase">{String(r.paymentMethod)}</span>
                         </div>
-                        <div className="flex justify-between text-sm text-slate-500 font-bold">
+                        <div className="flex justify-between text-sm text-slate-500">
                            <span>{String(r.checkin)} ➔ {String(r.checkout)}</span>
-                           <span className="font-black text-slate-900">${String(r.deposit)}</span>
+                           <span className="font-bold text-slate-900">${String(r.deposit)}</span>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="py-20 text-center text-slate-300 font-bold uppercase">Sin historial en esta unidad</div>
+                    <div className="py-20 text-center text-slate-300 font-bold uppercase">Sin registros en esta unidad</div>
                   )}
                 </div>
              </div>
@@ -408,13 +404,14 @@ const App = () => {
         </div>
       )}
 
-      {/* MODAL DE NUEVA RESERVA CON PAGOS */}
+      {/* MODAL NUEVA RESERVA (CALENDARIO FIJO + FORMULARIO SCROLL) */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-6xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh]">
-            <div className="md:w-5/12 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800 overflow-y-auto">
+          <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col md:flex-row h-[90vh] animate-in zoom-in-95 duration-300">
+            {/* Panel Izquierdo: CALENDARIO FIJO */}
+            <div className="md:w-5/12 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800">
               <div className="flex justify-between items-center mb-8">
-                <h3 className="text-2xl font-black tracking-tight uppercase">Ocupación Global</h3>
+                <h3 className="text-2xl font-black tracking-tight uppercase">Disponibilidad Global</h3>
                 <div className="flex gap-2">
                   <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-600 transition-all text-white"><ChevronLeft size={20}/></button>
                   <button onClick={() => setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))} className="p-3 bg-slate-800 rounded-2xl hover:bg-emerald-600 transition-all rotate-180 text-white"><ChevronLeft size={20}/></button>
@@ -439,44 +436,54 @@ const App = () => {
                   return cells;
                 })()}
               </div>
+              <div className="mt-auto p-6 bg-slate-800/30 rounded-3xl flex flex-wrap gap-4 text-[10px] font-bold uppercase tracking-widest justify-center">
+                  <div className="flex items-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full"></div> Reservado</div>
+                  <div className="flex items-center gap-2"><div className="w-2 h-2 bg-slate-700 rounded-full"></div> Libre</div>
+              </div>
             </div>
 
-            <div className="md:w-7/12 p-12 bg-white relative overflow-y-auto text-slate-900">
+            {/* Panel Derecho: FORMULARIO CON SCROLL */}
+            <div className="md:w-7/12 p-12 bg-white relative overflow-y-auto text-slate-900 scroll-smooth">
               <button onClick={() => setShowAddModal(false)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full hover:bg-slate-200 transition-all"><X/></button>
-              <h3 className="text-4xl font-black mb-10 tracking-tighter uppercase text-slate-800">Nueva Reserva</h3>
-              <form onSubmit={handleAddBooking} className="space-y-6">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Seleccionar Unidad</label>
+              <h3 className="text-4xl font-black mb-10 tracking-tighter uppercase text-slate-800">Registrar Reserva</h3>
+              <form onSubmit={handleAddBooking} className="space-y-8">
+                {/* Selector de Cabaña */}
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Elegir Unidad</label>
                   <div className="grid grid-cols-6 gap-2">
                     {bungalows.map(b => (
-                      <button type="button" key={b.id} onClick={() => setNewBooking({...newBooking, bungalowId: b.id})} className={`h-12 rounded-xl text-xs font-black border-2 transition-all ${newBooking.bungalowId === b.id ? 'bg-[#0F172A] border-[#0F172A] text-white shadow-xl' : 'bg-slate-50 border-slate-50 text-slate-400'}`}>
+                      <button type="button" key={b.id} onClick={() => setNewBooking({...newBooking, bungalowId: b.id})} className={`h-12 rounded-xl text-xs font-black border-2 transition-all ${newBooking.bungalowId === b.id ? 'bg-[#0F172A] border-[#0F172A] text-white shadow-xl scale-105' : 'bg-slate-50 border-slate-50 text-slate-400'}`}>
                         {String(b.id)}
                       </button>
                     ))}
                   </div>
                 </div>
+
+                {/* Datos del Huésped */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Huésped</label>
-                    <input type="text" required placeholder="Nombre o Familia" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={newBooking.name} onChange={(e) => setNewBooking({...newBooking, name: e.target.value})} />
+                    <input type="text" required placeholder="Nombre completo" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={newBooking.name} onChange={(e) => setNewBooking({...newBooking, name: e.target.value})} />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">WhatsApp</label>
                     <input type="tel" required placeholder="+54 9..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" value={newBooking.phone} onChange={(e) => setNewBooking({...newBooking, phone: e.target.value})} />
                   </div>
                 </div>
+
+                {/* Fechas */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 font-bold">Fecha Entrada</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Fecha Entrada</label>
                     <input type="date" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold" value={newBooking.checkin} onChange={(e) => setNewBooking({...newBooking, checkin: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1 font-bold">Fecha Salida</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Fecha Salida</label>
                     <input type="date" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold" value={newBooking.checkout} onChange={(e) => setNewBooking({...newBooking, checkout: e.target.value})} />
                   </div>
                 </div>
                 
-                {/* Nuevas Casillas: Seña y Forma de Pago */}
+                {/* Lógica de Seña y Pagos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-8 rounded-[3rem] border border-slate-100 shadow-inner">
                     <div className="flex flex-col gap-5 justify-center">
                         <label className="flex items-center gap-3 cursor-pointer group">
@@ -487,10 +494,10 @@ const App = () => {
                                     checked={newBooking.isDepositPaid} 
                                     onChange={(e) => setNewBooking({...newBooking, isDepositPaid: e.target.checked})} 
                                 />
-                                <div className="w-7 h-7 border-2 border-slate-300 rounded-xl bg-white peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all shadow-sm"></div>
+                                <div className="w-7 h-7 border-2 border-slate-300 rounded-xl bg-white peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-all"></div>
                                 <div className="absolute top-1.5 left-2.5 w-2 h-4 border-r-2 border-b-2 border-white rotate-45 opacity-0 peer-checked:opacity-100 transition-all"></div>
                            </div>
-                           <span className="text-xs font-black uppercase text-slate-600 group-hover:text-slate-900 transition-colors tracking-tight">¿Paga Seña Ahora?</span>
+                           <span className="text-xs font-black uppercase text-slate-600 group-hover:text-slate-900 transition-colors">¿Paga Seña Ahora?</span>
                         </label>
 
                         <div className="space-y-2">
@@ -499,14 +506,14 @@ const App = () => {
                                 <button 
                                     type="button" 
                                     onClick={() => setNewBooking({...newBooking, paymentMethod: 'Efectivo'})}
-                                    className={`flex-1 py-4 px-4 rounded-2xl text-[10px] font-black flex items-center justify-center gap-2 border-2 transition-all uppercase ${newBooking.paymentMethod === 'Efectivo' ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}
+                                    className={`flex-1 py-4 rounded-2xl text-[10px] font-black flex items-center justify-center gap-2 border-2 transition-all ${newBooking.paymentMethod === 'Efectivo' ? 'bg-slate-900 border-slate-900 text-white shadow-xl' : 'bg-white border-slate-200 text-slate-400'}`}
                                 >
                                     <Wallet size={16}/> Efectivo
                                 </button>
                                 <button 
                                     type="button" 
                                     onClick={() => setNewBooking({...newBooking, paymentMethod: 'MercadoPago'})}
-                                    className={`flex-1 py-4 px-4 rounded-2xl text-[10px] font-black flex items-center justify-center gap-2 border-2 transition-all uppercase ${newBooking.paymentMethod === 'MercadoPago' ? 'bg-[#009EE3] border-[#009EE3] text-white shadow-xl' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}
+                                    className={`flex-1 py-4 rounded-2xl text-[10px] font-black flex items-center justify-center gap-2 border-2 transition-all ${newBooking.paymentMethod === 'MercadoPago' ? 'bg-[#009EE3] border-[#009EE3] text-white shadow-xl' : 'bg-white border-slate-200 text-slate-400'}`}
                                 >
                                     <CreditCard size={16}/> MercadoPago
                                 </button>
@@ -519,7 +526,7 @@ const App = () => {
                     </div>
                 </div>
 
-                {/* Recordatorio MercadoPago */}
+                {/* Aviso MercadoPago */}
                 {newBooking.paymentMethod === 'MercadoPago' && (
                   <div className="flex items-center gap-4 p-6 bg-amber-50 border border-amber-200 rounded-[2.5rem] animate-pulse">
                     <div className="w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center text-white shadow-lg">
@@ -532,7 +539,7 @@ const App = () => {
                 )}
 
                 <button type="submit" disabled={isProcessing} className="w-full py-6 bg-[#0F172A] text-white rounded-[2.5rem] font-black text-xl hover:bg-emerald-600 transition-all shadow-2xl active:scale-95">
-                  {isProcessing ? 'Procesando...' : 'Confirmar Registro de Reserva'}
+                  {isProcessing ? 'Procesando...' : 'Confirmar Registro'}
                 </button>
               </form>
             </div>
@@ -543,9 +550,10 @@ const App = () => {
   );
 };
 
-// --- COMPONENTES AUXILIARES ---
+// --- COMPONENTES ---
+
 const NavItem = ({ icon: Icon, label, active, onClick, badge }) => (
-  <button onClick={onClick} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl transition-all ${active ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'}`}>
+  <button onClick={onClick} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl transition-all ${active ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'}`}>
     <div className="flex items-center gap-4">
       <Icon size={20} />
       <span className="font-bold text-sm tracking-tight">{String(label)}</span>
@@ -578,14 +586,14 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF, on
         className="bg-white rounded-[3.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 overflow-hidden group flex flex-col cursor-pointer active:scale-[0.98]"
     >
       <div className="p-8 flex-1 text-slate-900">
-        <div className="flex justify-between items-start mb-8">
+        <div className="flex justify-between items-start mb-8 text-slate-900">
           <div className={`px-4 py-1.5 rounded-full ${config.bg} ${config.text} text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm`}>
             <span className={`w-2 h-2 rounded-full ${config.dot} ${data.status === 'occupied' ? 'animate-pulse' : ''}`}></span>
             {config.label}
           </div>
           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-            <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'cleaning'); }} className="p-2 hover:bg-amber-50 text-amber-600 rounded-xl shadow-sm bg-white" title="Limpieza"><Clock size={16}/></button>
-            <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'free'); }} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-xl shadow-sm bg-white" title="Liberar"><CheckCircle2 size={16}/></button>
+            <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'cleaning'); }} className="p-2 hover:bg-amber-50 text-amber-600 rounded-xl shadow-sm bg-white"><Clock size={16}/></button>
+            <button onClick={(e) => { e.stopPropagation(); onStatusChange(data.id, 'free'); }} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-xl shadow-sm bg-white"><CheckCircle2 size={16}/></button>
           </div>
         </div>
 
