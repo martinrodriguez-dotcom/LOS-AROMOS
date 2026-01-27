@@ -40,12 +40,12 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN DE FIREBASE ---
-// Priorizamos la configuración del entorno para evitar errores de permisos, 
-// pero mantenemos tu configuración real como respaldo.
 const getFirebaseConfig = () => {
+  // Prioridad a la configuración del entorno para el funcionamiento del Preview
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     return JSON.parse(__firebase_config);
   }
+  // Configuración de respaldo para el despliegue final (Netlify)
   return {
     apiKey: "AIzaSyDOeC0me_E0rtDx56ljnihrY8U5JxkCleg",
     authDomain: "los-aromos-4b29b.firebaseapp.com",
@@ -61,7 +61,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// REGLA 1: Saneamiento estricto del appId para evitar errores de segmentos (odd number of segments)
+// REGLA 1: El appId debe ser un único segmento para que la ruta tenga 5 niveles
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'los-aromos-4b29b';
 const appId = rawAppId.replace(/\//g, '_'); 
 
@@ -84,7 +84,7 @@ const App = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [authError, setAuthError] = useState(null);
+  const [errorStatus, setErrorStatus] = useState(null);
 
   const [newBooking, setNewBooking] = useState({
     bungalowId: "1", name: '', phone: '', guests: 1, checkin: '', checkout: '', deposit: 0
@@ -101,7 +101,7 @@ const App = () => {
         }
       } catch (err) { 
         console.error("Error en Firebase Auth:", err);
-        setAuthError("Error de autenticación. Verifica las reglas de tu consola de Firebase.");
+        setErrorStatus("Error de autenticación. Asegúrate de habilitar el acceso anónimo en Firebase.");
       }
     };
     initAuth();
@@ -109,7 +109,7 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // REGLA 1 y 2: Consultas simples y rutas públicas
+  // REGLA 1 y 2: Rutas estandarizadas y consultas simples
   useEffect(() => {
     if (!user) return;
 
@@ -118,7 +118,6 @@ const App = () => {
     const unsubB = onSnapshot(bRef, (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (data.length === 0) {
-        // Inicializar datos si la colección está vacía
         for(let i = 1; i <= 12; i++) {
           setDoc(doc(bRef, i.toString()), { 
             name: `Bungalow ${i.toString().padStart(2, '0')}`, 
@@ -127,7 +126,10 @@ const App = () => {
         }
       }
       setBungalows(data.sort((a, b) => parseInt(a.id) - parseInt(b.id)));
-    }, (err) => console.error("Error Firestore (Bungalows):", err));
+    }, (err) => {
+      console.error("Error Firestore (Bungalows):", err);
+      if (err.code === 'permission-denied') setErrorStatus("Permisos de Firestore insuficientes.");
+    });
 
     const rRef = collection(db, 'artifacts', appId, 'public', 'data', 'reservations');
     const unsubR = onSnapshot(rRef, (snap) => {
@@ -213,22 +215,27 @@ const App = () => {
     income: reservations.reduce((acc, r) => acc + (parseFloat(r.deposit) || 0), 0)
   }), [bungalows, reservations, maintenance]);
 
-  if (authError) return (
+  if (errorStatus) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-6 text-center">
-      <div className="bg-red-500/20 border border-red-500 p-8 rounded-3xl max-w-md">
-        <h2 className="text-2xl font-black mb-4">Error de Permisos</h2>
-        <p className="text-slate-300 mb-6">{authError}</p>
-        <p className="text-sm text-slate-400 italic">
-          Nota: Si usas tu propio proyecto, asegúrate de que las reglas de Firestore permitan lectura/escritura pública en la consola de Firebase.
-        </p>
+      <div className="bg-red-500/20 border border-red-500 p-10 rounded-[3rem] max-w-lg shadow-2xl">
+        <h2 className="text-3xl font-black mb-4">Problema detectado</h2>
+        <p className="text-slate-300 mb-6 font-medium">{errorStatus}</p>
+        <div className="text-left bg-slate-900/50 p-6 rounded-2xl text-xs space-y-3 font-mono border border-white/10">
+          <p>Para solucionar esto en tu proyecto:</p>
+          <ol className="list-decimal list-inside space-y-2 text-slate-400">
+            <li>Habilita el inicio de sesión anónimo en Firebase Auth.</li>
+            <li>Asegúrate de que las reglas de Firestore permitan acceso a la ruta:</li>
+            <li className="text-emerald-400 font-bold">match /artifacts/{"{appId}"}/public/data/{"{col}"}/{"{doc}"}</li>
+          </ol>
+        </div>
       </div>
     </div>
   );
 
   if (!user) return (
     <div className="h-screen flex flex-col items-center justify-center bg-[#0F172A] text-white font-black animate-pulse">
-      <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-      <p className="tracking-widest uppercase">Sincronizando Sistema Los Aromos...</p>
+      <div className="w-20 h-20 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-8"></div>
+      <p className="tracking-widest uppercase text-sm">Sincronizando Gestión Los Aromos...</p>
     </div>
   );
 
@@ -288,12 +295,12 @@ const App = () => {
           
           {activeTab === 'reports' && (
             <div className="max-w-4xl space-y-8 animate-in">
-              <div className="bg-[#0F172A] p-10 rounded-[3rem] text-white flex justify-between items-center shadow-2xl">
+              <div className="bg-[#0F172A] p-12 rounded-[3.5rem] text-white flex justify-between items-center shadow-2xl">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-2">Recaudación Total Señas</p>
                   <h3 className="text-6xl font-black tracking-tighter">${stats.income}</h3>
                 </div>
-                <BarChart3 size={64} className="text-slate-800" />
+                <BarChart3 size={72} className="text-slate-800" />
               </div>
             </div>
           )}
@@ -302,7 +309,7 @@ const App = () => {
 
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-6xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh]">
+          <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-6xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row h-[90vh]">
             <div className="md:w-5/12 bg-[#0F172A] p-10 text-white flex flex-col border-r border-slate-800 overflow-y-auto">
               <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black tracking-tight">Ocupación</h3>
@@ -360,12 +367,12 @@ const App = () => {
                     <input type="date" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900" value={newBooking.checkout} onChange={(e) => setNewBooking({...newBooking, checkout: e.target.value})} />
                   </div>
                 </div>
-                <div className="bg-emerald-50 p-8 rounded-[2.5rem] border border-emerald-100 shadow-inner">
+                <div className="bg-emerald-50 p-10 rounded-[3rem] border border-emerald-100 shadow-inner">
                   <label className="text-[10px] font-black text-emerald-600 uppercase mb-2 block">Seña Cobrada ($)</label>
-                  <input type="number" required className="bg-transparent border-none outline-none font-black text-emerald-700 text-5xl w-full" value={newBooking.deposit} onChange={(e) => setNewBooking({...newBooking, deposit: e.target.value})} />
+                  <input type="number" required className="bg-transparent border-none outline-none font-black text-emerald-700 text-6xl w-full" value={newBooking.deposit} onChange={(e) => setNewBooking({...newBooking, deposit: e.target.value})} />
                 </div>
-                <button type="submit" disabled={isProcessing} className="w-full py-6 bg-[#0F172A] text-white rounded-[2rem] font-black text-xl hover:bg-emerald-600 shadow-2xl transition-all">
-                  {isProcessing ? 'Guardando...' : 'Confirmar Reserva'}
+                <button type="submit" disabled={isProcessing} className="w-full py-6 bg-[#0F172A] text-white rounded-[2rem] font-black text-xl hover:bg-emerald-600 shadow-2xl transition-all active:scale-95">
+                  {isProcessing ? 'Procesando...' : 'Confirmar Reserva'}
                 </button>
               </form>
             </div>
@@ -387,7 +394,7 @@ const NavItem = ({ icon: Icon, label, active, onClick, badge }) => (
 );
 
 const StatCard = ({ icon: Icon, label, value, color, bg }) => (
-  <div className={`p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex items-center gap-6 ${bg}`}>
+  <div className={`p-8 rounded-[3rem] border border-slate-100 shadow-sm flex items-center gap-6 ${bg}`}>
     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${color} bg-white shadow-sm`}><Icon size={28} /></div>
     <div>
       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{String(label)}</p>
@@ -405,7 +412,7 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF }) 
   const config = statusStyles[data.status] || statusStyles.free;
 
   return (
-    <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 overflow-hidden group flex flex-col">
+    <div className="bg-white rounded-[3.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all duration-500 overflow-hidden group flex flex-col">
       <div className="p-8 flex-1">
         <div className="flex justify-between items-start mb-8 text-slate-900">
           <div className={`px-4 py-1.5 rounded-full ${config.bg} ${config.text} text-[10px] font-black uppercase tracking-widest flex items-center gap-2`}>
@@ -422,7 +429,7 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF }) 
         
         {data.status === 'occupied' && reservation ? (
           <div className="space-y-4 mt-6 animate-in">
-            <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 shadow-inner">
+            <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-100 shadow-inner">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Huesped</p>
               <p className="text-lg font-black text-slate-700 truncate">{String(reservation.name)}</p>
             </div>
@@ -440,7 +447,7 @@ const BungalowCard = ({ data, reservation, onStatusChange, onWhatsApp, onPDF }) 
             </div>
           </div>
         ) : (
-          <div className="h-40 flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded-[2.5rem] mt-6 bg-slate-50/50 text-slate-200 shadow-inner"><Package size={24} /></div>
+          <div className="h-44 flex flex-col items-center justify-center border-2 border-dashed border-slate-100 rounded-[3rem] mt-6 bg-slate-50/50 text-slate-200 shadow-inner"><Package size={28} /></div>
         )}
       </div>
     </div>
